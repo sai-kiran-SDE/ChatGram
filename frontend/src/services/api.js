@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5050/api",
+  baseURL: "https://chatgram-9oo7.onrender.com/api",
 });
 
 API.interceptors.request.use((req) => {
