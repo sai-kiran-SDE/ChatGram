@@ -1,29 +1,33 @@
 import jwt from "jsonwebtoken";
 
-const onlineUsers = new Map(); 
-// userId => socketId
+const onlineUsers = new Map();
 
 const socketHandler = (io) => {
+  // 🔐 SOCKET AUTH MIDDLEWARE
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+
+    if (!token) {
+      return next(new Error("No token"));
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.userId = decoded.id;
+      next();
+    } catch (err) {
+      next(new Error("Invalid token"));
+    }
+  });
+
   io.on("connection", (socket) => {
-    console.log("New socket connected:", socket.id);
+    console.log("Socket connected:", socket.id);
 
-    // AUTHENTICATE SOCKET
-    socket.on("authenticate", (token) => {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const userId = decoded.id;
+    onlineUsers.set(socket.userId, socket.id);
 
-        onlineUsers.set(userId, socket.id);
-        socket.userId = userId;
+    io.emit("onlineUsers", Array.from(onlineUsers.keys()));
 
-        // notify all users
-        io.emit("onlineUsers", Array.from(onlineUsers.keys()));
-      } catch (error) {
-        console.log("Socket auth failed");
-      }
-    });
-
-    // SEND MESSAGE REAL-TIME
+    // SEND MESSAGE
     socket.on("sendMessage", ({ receiverId, text }) => {
       const receiverSocketId = onlineUsers.get(receiverId);
 
@@ -31,17 +35,15 @@ const socketHandler = (io) => {
         io.to(receiverSocketId).emit("receiveMessage", {
           senderId: socket.userId,
           text,
-          createdAt: new Date()
+          createdAt: new Date(),
         });
       }
     });
 
     // DISCONNECT
     socket.on("disconnect", () => {
-      if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        io.emit("onlineUsers", Array.from(onlineUsers.keys()));
-      }
+      onlineUsers.delete(socket.userId);
+      io.emit("onlineUsers", Array.from(onlineUsers.keys()));
       console.log("Socket disconnected:", socket.id);
     });
   });
